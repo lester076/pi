@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { stripAnsi } from "../src/utils/ansi.ts";
+import { splitIncompleteAnsiSuffix, stripAnsi } from "../src/utils/ansi.ts";
 
 function referenceAnsiRegex(): RegExp {
 	const ST = "(?:\\u0007|\\u001B\\u005C|\\u009C)";
@@ -106,5 +106,35 @@ describe("stripAnsi", () => {
 	it("strips common ANSI sequences used in tool output", () => {
 		const input = "a\x1b[31mred\x1b[0m\x1b]8;;https://example.com\x07link\x1b]8;;\x07z";
 		expect(stripAnsi(input)).toBe("aredlinkz");
+	});
+
+	it("strips CSI private-parameter sequences without leaking parameters", () => {
+		// ECMA-48: <, =, >, ? right after the CSI introducer are private-parameter
+		// markers, not final bytes. The sequences from #11377 are real terminal
+		// traffic (SGR mouse reports, focus events, XTVERSION replies).
+		const cases: Array<[string, string]> = [
+			["\x1b[<35;59;1M", ""], // SGR mouse press
+			["\x1b[<0;1;1Mclick\x1b[<0;1;1m", "click"], // mouse press + release around text
+			["\x1b[>0;276;1M", ""], // SGR mouse with 4th parameter
+			["\x1b[>c", ""], // secondary device attributes reply
+			["\x1b[=c", ""], // DEC device status reply
+			["\x1b[?25hok", "ok"], // DECSET-style with marker and params
+			["\x9b<1;2M", ""], // C1 CSI introducer, same rules
+			["a\x1b[<35;59;1Mb", "ab"],
+		];
+		for (const [input, expected] of cases) {
+			expect(stripAnsi(input)).toBe(expected);
+		}
+	});
+
+	it("holds unfinished private-parameter sequences back while streaming", () => {
+		expect(splitIncompleteAnsiSuffix("data\x1b[<35;59;")).toEqual({
+			complete: "data",
+			pending: "\x1b[<35;59;",
+		});
+		expect(splitIncompleteAnsiSuffix("data\x1b[<")).toEqual({
+			complete: "data",
+			pending: "\x1b[<",
+		});
 	});
 });

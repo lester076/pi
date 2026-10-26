@@ -32,8 +32,12 @@ const ST = "(?:\\u0007|\\u001B\\u005C|\\u009C)";
 // OSC sequences: ESC ] ... ST
 const OSC_START = "\\u001B\\]";
 
-// CSI and related: ESC/C1, optional intermediates, optional params (supports ; and :), then final byte
-const CSI_START = "[\\u001B\\u009B][[\\]()#;?]*(?:\\d{1,4}(?:[;:]\\d{0,4})*)?";
+// CSI and related: ESC/C1, optional odd introducers, optional private-parameter
+// marker (< = > — e.g. SGR mouse reports "ESC[<35;59;1M"; these are parameter
+// bytes per ECMA-48, never final bytes), optional params (supports ; and :),
+// then final byte. Without the marker group the strip stops at the marker and
+// leaks the parameters as text.
+const CSI_START = "[\\u001B\\u009B][[\\]()#;?]*[<=>?]?(?:\\d{1,4}(?:[;:]\\d{0,4})*)?";
 const CSI_FINAL = "[\\dA-PR-TZcf-nq-uy=><~]";
 
 // Complete sequences. OSC is non-greedy until the first ST.
